@@ -7,6 +7,7 @@ use crate::Error;
 
 pub struct Args {
     unparsed: Vec<String>,
+    context: String,
 }
 
 impl Args {
@@ -133,6 +134,7 @@ impl Default for Args {
     fn default() -> Self {
         Self {
             unparsed: std::env::args().skip(1).collect(),
+            context: String::new(),
         }
     }
 }
@@ -141,6 +143,19 @@ impl Default for Args {
 pub enum Name {
     Short(char),
     Long(&'static str),
+    Positional(&'static str),
+}
+
+impl From<char> for Name {
+    fn from(value: char) -> Self {
+        Self::Short(value)
+    }
+}
+
+impl From<&'static str> for Name {
+    fn from(value: &'static str) -> Self {
+        Self::Long(value)
+    }
 }
 
 impl std::fmt::Display for Name {
@@ -148,6 +163,7 @@ impl std::fmt::Display for Name {
         match self {
             Self::Short(c) => write!(f, "-{c}"),
             Self::Long(name) => write!(f, "--{name}"),
+            Self::Positional(name) => write!(f, "<{name}>"),
         }
     }
 }
@@ -166,6 +182,7 @@ impl Parser for Option<String> {
             let v = match name {
                 Name::Short(c) => args.take_short_param(*c)?,
                 Name::Long(name) => args.take_long_param(name)?,
+                Name::Positional(_) => args.take_positional(),
             };
 
             if v.is_some() {
@@ -185,6 +202,7 @@ impl Parser for bool {
             let v = match name {
                 Name::Short(c) => args.get_short_flag(*c),
                 Name::Long(name) => args.get_long_flag(name),
+                Name::Positional(_) => args.get_positional().is_some(),
             };
 
             if v {

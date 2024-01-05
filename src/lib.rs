@@ -10,66 +10,101 @@ pub use args::{Args, Name, Parser};
 pub use error::Error;
 
 #[macro_export]
+macro_rules! help {
+    ($args:ident, $cmd:literal) => {
+        println!("{} {}", $cmd, $args.context);
+    };
+}
+
+#[macro_export]
 macro_rules! cli {
-    // #[attr]
-    // command { #[attr] param: type } => body
-    ($($(#[$($attr:tt)*])? $($name:ident)? $({ $($(#[$($f_attr:tt)*])* $field:ident: $type:ty),* $(,)? $(, ..$rest:ident)? })? => $body:expr $(,)?)*) => {
-        let mut args = $crate::Args::default();
-
-        $crate::cli! { args, $($($name)* $({ $($(#[$($f_attr)*])* $field: $type,)* $(..$rest)* })* => $body)* }
-    };
-
-    ($args:ident, $($(#[$($attr:tt)*])? $($name:ident)? $({ $($(#[$($f_attr:tt)*])* $field:ident: $type:ty),* $(,)? $(, ..$rest:ident)? })? => $body:expr $(,)?)*) => {
-        $($crate::cli! { @main, $args $($name)* $({ $($(#[$($f_attr)*])* $field: $type,)* $(..$rest)* })* => $body })*
-        if let Some(arg) = $args.get_positional() {
-            $($crate::cli! { @cmd, $args arg $($name)* $({ $($(#[$($f_attr)*])* $field: $type,)* $(..$rest)* })* => $body })*
+    ($args:ident, $($rest:tt)*) => {
+        $crate::__cli_internal! { @main $args $($rest)* }
+        if let Some(arg) = $args.take_positional() {
+            let arg = arg.as_str();
+            $crate::__cli_internal! { @comm $args arg $($rest)* }
         }
 
-        panic!("unexpected argument");
+        todo!();
     };
+    ($($rest:tt)*) => {
+        let mut __args = $crate::Args::default();
+        $crate::cli! { __args, $($rest)* };
+    };
+}
 
-    // { #[attr] param: type } => body
-    (@main, $args:ident { $($(#[$($attr:tt)*])* $field:ident: $type:ty,)* $(..$rest:ident)? } => $body:expr) => {
-        $($crate::cli! { @parse, $args $(#[$($attr)*])* $field: $type })*
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __cli_internal {
+    (@main $args:ident $(#[$($attr:tt)*])* $name:ident $params:tt => $body:expr $(, $($rest:tt)*)?) => {
+        $crate::__cli_internal! { @main $args $($($rest)*)* }
+    };
+    (@main $args:ident $(#[$($attr:tt)*])* $name:ident => $body:expr $(, $($rest:tt)*)?) => {
+        $crate::__cli_internal! { @main $args $($($rest)*)* }
+    };
+    (@main $args:ident $(#[$($attr:tt)*])* { $($params:tt)* } => $body:expr $(, $($rest:tt)*)?) => {
+        $crate::__cli_internal! { @parse $args $($params)* }
         if $args.get_unparsed().is_empty() {
-            $crate::cli! { @rest, $args $($rest)* }
             return $body;
         }
+        $crate::__cli_internal! { @main $args $($($rest)*)* }
     };
-    (@main, $args:ident $name:ident $_:tt => $body:expr) => {};
+    (@main $args:ident) => {};
 
-    // command { #[attr] param: type } => body
-    (@cmd, $args:ident $arg:ident $name:ident { $($(#[$($attr:tt)*])* $field:ident: $type:ty,)* $(..$rest:ident)? } => $body:expr) => {
-        if let stringify!($name) = $arg {
-            $($crate::cli! { @parse, $args $(#[$($attr)*])* $field: $type })*
+    (@comm $args:ident $comm:ident $(#[$($attr:tt)*])* { $($params:tt)* } => $body:expr $(, $($rest:tt)*)?) => {
+        $crate::__cli_internal! { @comm $args $comm $($($rest)*)* }
+    };
+    (@comm $args:ident $comm:ident $(#[$($attr:tt)*])* $name:ident $rest_args:ident => $body:expr $(, $($rest:tt)*)?) => {
+        if let stringify!($name) = $comm {
+            let $rest_args = $args;
             return $body;
         }
+        $crate::__cli_internal! { @comm $args $comm $($($rest)*)* }
     };
-    (@cmd, $args:ident $arg:ident $_:tt => $body:expr) => {};
+    (@comm $args:ident $comm:ident $(#[$($attr:tt)*])* $name:ident { $($params:tt)* } => $body:expr $(, $($rest:tt)*)?) => {
+        if let stringify!($name) = $comm {
+            $crate::__cli_internal! { @parse $args $($params)* }
+            return $body;
+        }
+        $crate::__cli_internal! { @comm $args $comm $($($rest)*)* }
+    };
+    (@comm $args:ident $comm:ident $(#[$($attr:tt)*])* $name:ident => $body:expr $(, $($rest:tt)*)?) => {
+        if let stringify!($name) = $comm {
+            return $body;
+        }
+        $crate::__cli_internal! { @comm $args $comm $($($rest)*)* }
+    };
+    (@comm $args:ident $comm:ident) => {};
 
-    // #[attr] param: type
-    (@parse, $args:ident $(#[$($attr:tt)*])* $field:ident: $type:ty) => {
-        let $field = <$type as $crate::Parser>::parse(&mut $args, $crate::cli!(@names, [] [] #[$($($attr)*),*] $field))?;
+    (@parse $args:ident $(#[$($attr:tt)*])* $field:ident: $type:ty $(, $($rest:tt)*)?) => {
+        let $field: $type = <$type as $crate::Parser>::parse(
+            &mut $args,
+            $crate::__cli_internal! { @names #[$($($attr)*),*] $field default [] }
+        ).unwrap();
+        $crate::__cli_internal! { @parse $args $($($rest)*)* }
     };
+    (@parse $args:ident ..$rest:ident) => {};
+    (@parse $args:ident) => {};
 
-    (@names, [$($short:expr)*] [] #[] $field:ident) => {
-        &[$($short,)* $crate::Name::Long(stringify!($field))]
+    (@names #[] $field:ident default [$($name:expr)*]) => {
+        &[$($name,)* $crate::Name::Long(stringify!($field))]
     };
-    (@names, [$($short:expr)*] [$($long:expr)*] #[] $field:ident) => {
-        &[$($short,)* $($long),*]
+    (@names #[] $field:ident nodefault [$($name:expr)*]) => {
+        &[$($name,)*]
     };
-    (@names, [$($short:expr)*] [$($long:expr)*] #[short = $v:literal $(, $a:ident = $b:literal)*] $field:ident) => {
-        $crate::cli!(@names, [$($short)* $crate::Name::Short($v)] [$($long)*] #[$($a = $b),*] $field)
+    (@names #[alias = $v:literal $(, $($rest:tt)*)?] $field:ident $m:ident [$($name:expr)*]) => {
+        $crate::__cli_internal! { @names #[$($($rest)*)*] $field $m [$($name)* $v.into()] }
     };
-    (@names, [$($short:expr)*] [$($long:expr)*] #[long = $v:literal $(, $a:ident = $b:literal)*] $field:ident) => {
-        $crate::cli!(@names, [$($short)*] [$($long)* $crate::Name::Long($v)] #[$($a = $b),*] $field)
+    (@names #[long = $v:literal $(, $($rest:tt)*)?] $field:ident $m:ident [$($name:expr)*]) => {
+        $crate::__cli_internal! { @names #[$($($rest)*)*] $field nodefault [$($name)* $crate::Name::Long($v)] }
     };
-    (@names, [$($short:expr)*] [$($long:expr)*] #[$($_:tt)* $(, $($rest:tt)*)?] $field:ident) => {
-        $crate::cli!(@names, [$($short)*] [$($long)*] #[$($rest)*] $field)
+    (@names #[short = $v:literal $(, $($rest:tt)*)?] $field:ident $m:ident [$($name:expr)*]) => {
+        $crate::__cli_internal! { @names #[$($($rest)*)*] $field nodefault [$($name)* $crate::Name::Short($v)] }
     };
-
-    (@rest, $args:ident $rest:ident) => {
-        let $rest = $args;
+    (@names #[positional $(, $($rest:tt)*)?] $field:ident $m:ident [$($name:expr)*]) => {
+        $crate::__cli_internal! { @names #[$($($rest)*)*] $field nodefault [$($name)* $crate::Name::Positional(stringify!($field))] }
     };
-    (@rest, $args:ident) => {};
+    (@names #[$_:tt $($rest:tt)*] $field:ident $m:ident [$($name:expr)*]) => {
+        $crate::__cli_internal! { @names #[$($rest)*] $field $m [$($name)*] }
+    };
 }
