@@ -7,71 +7,93 @@
 pub mod __priv;
 pub mod parser;
 
-pub use parser::Args;
+pub use parser::{Args, Opt};
 
 #[macro_export]
 macro_rules! parse {
+    ($args:ident; $($rest:tt)*) => {
+        use $crate::__priv::*;
+
+        $crate::__help! { $args; $($rest)* }
+
+        $crate::__init! { $($rest)* }
+        #[allow(unreachable_code)]
+        match $crate::__loop! { $args; $($rest)* } {
+            Ok(v) => v,
+            Err(e) => e.terminate($args),
+        }
+    };
     ($($rest:tt)*) => {
-        $crate::try_parse! { $($rest)* }
-            .unwrap_or_else(|err| err.terminate())
+        let mut __args = $crate::Args::default();
+        $crate::parse! { __args; $($rest)* }
     };
 }
 
 #[macro_export]
 macro_rules! try_parse {
-    ($args:ident; $($rest:tt)*) => {
-        '__err: {
-            use $crate::__priv::*;
+    ($args:ident; $($rest:tt)*) => {{
+        use $crate::__priv::*;
 
-            $crate::__init! { $args; $($rest)* }
-
-            #[allow(unreachable_code)]
-            loop {
-                let __arg = $args.next_opt();
-                $crate::__match! { $args, '__err, __arg; $($rest)* }
-            }
-
-            $crate::__finish! { $args, '__err; $($rest)* }
-        }
-    };
+        $crate::__init! { $($rest)* }
+        #[allow(unreachable_code)]
+        $crate::__loop! { $args, $($rest)* }
+    }};
     ($($rest:tt)*) => {{
+        use $crate::__priv::*;
+
         let mut __args = $crate::Args::default();
 
-        $crate::try_parse! { __args; $($rest)* }
+        $crate::__init! { $($rest)* }
+        #[allow(unreachable_code)]
+        $crate::__loop! { __args; $($rest)* }
     }};
 }
 
 #[derive(Debug)]
-pub enum ErrorKind {
-    NeedsHelp,
+pub enum Error {
+    Help,
     MissingValue,
     MissingCommand,
     Unexpected(String),
-}
-
-#[derive(Debug)]
-pub struct Error {
-    kind: ErrorKind,
-    context: Option<String>,
+    UnknownCommand(String),
 }
 
 impl Error {
-    pub fn new(kind: ErrorKind) -> Self {
-        Self { kind, context: None }
-    }
+    pub fn terminate(self, args: parser::Args) -> ! {
+        let mut w = std::io::stderr().lock();
 
-    pub fn context(mut self, ctx: String) -> Self {
-        self.context = Some(ctx);
-        self
-    }
+        match self {
+            Self::Help => {
+                args.style
+                    .format_help(&args.context, &mut std::io::stdout().lock())
+                    .unwrap();
 
-    pub fn terminate(self) -> ! {
-        std::process::exit(match self.kind {
-            ErrorKind::NeedsHelp => todo!(),
-            v => {
-                println!("{v:?}");
-                1
+                std::process::exit(0);
             }
-        })
+            Self::MissingValue => {
+                let opt = args.peek_back().unwrap();
+                args.style
+                    .format_error(&format!("option '{opt}' requires a value"), &mut w)
+                    .unwrap();
+            }
+            Self::MissingCommand => {
+                let name = args.context.name;
+                args.style
+                    .format_error(&format!("missing subcommand for {name}"), &mut w)
+                    .unwrap();
+            }
+            Self::Unexpected(v) => {
+                args.style
+                    .format_error(&format!("unexpected argument: {v}"), &mut w)
+                    .unwrap();
+            }
+            Self::UnknownCommand(v) => {
+                args.style
+                    .format_error(&format!("unknown command: {v}"), &mut w)
+                    .unwrap();
+            }
+        }
+
+        std::process::exit(1)
     }
 }
