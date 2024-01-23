@@ -6,10 +6,14 @@
 use std::borrow::Cow;
 use std::io;
 
+/// A command line option. This is used by [`parse`](crate::parse).
 #[derive(Debug)]
 pub enum Opt<'a> {
+    /// Short flag (-c)
     Short(char),
+    /// Long flag (--foo)
     Long(&'a str),
+    /// A plain argument
     Value(&'a str),
 }
 
@@ -39,19 +43,24 @@ pub struct Context<'a> {
     pub commands: &'a [(&'a str, &'a str)],
 }
 
+/// Argument parser. This can be given to [`parse`](crate::parse) to customise which arguments are
+/// parsed, as well as the formatting.
 pub struct Args {
     args: Vec<String>,
     state: State,
-    pub style: Style,
+    pub(crate) style: Style,
     #[doc(hidden)]
     pub context: Context<'static>,
 }
 
 impl Args {
+    /// Create an argument parser from command-line arguments.
+    #[must_use]
     pub fn new() -> Self {
         Self::from(std::env::args().skip(1))
     }
 
+    /// Create an argument parser from the given arguments.
     pub fn from(args: impl IntoIterator<Item = String>) -> Self {
         Self {
             args: args.into_iter().collect(),
@@ -61,16 +70,16 @@ impl Args {
         }
     }
 
-    /// Set this command's [Style], changing output colors.
+    /// Set this command's [`Style`], changing output colors.
     ///
     /// Color output can be disabled by setting the `NO_COLOR` environment variable, also via
-    /// [std::env::set_var].
+    /// [`std::env::set_var`].
     pub fn style(&mut self, style: Style) -> &mut Self {
         self.style = style;
         self
     }
 
-    /// Read the next option in the arguments. Used by [crate::parse].
+    /// Read the next option in the arguments. Used by [`parse`](crate::parse).
     ///
     /// Returns [None] if empty.
     pub fn next_opt(&mut self) -> Option<Opt> {
@@ -107,7 +116,7 @@ impl Args {
         }
     }
 
-    /// Get the next value from the arguments. Used by [crate::parse].
+    /// Get the next value from the arguments. Used by [`parse`](crate::parse).
     ///
     /// Similar to `args.next_opt().map(|v| v.to_string())`, but also handles values in short
     /// arguments (`-ofile`).
@@ -121,9 +130,11 @@ impl Args {
         }
     }
 
-    /// Try to read all the remaining arguments as values. Used by [crate::parse].
+    /// Try to read all the remaining arguments as values. Used by [`parse`](crate::parse).
     ///
-    /// If a flag is encountered, it'll be returned as [Err].
+    /// # Errors
+    ///
+    /// If a non-[value](Opt::Value) argument is found, it will be returned as [`Err`].
     pub fn into_values(&mut self) -> Result<Vec<String>, String> {
         let mut values = Vec::new();
 
@@ -136,7 +147,7 @@ impl Args {
         }
     }
 
-    /// Peek the previous argument. Used by [crate::parse] when formatting errors.
+    /// Peek the previous argument. Used by [`parse`](crate::parse) when formatting errors.
     pub fn peek_back(&self) -> Option<&str> {
         match self.state {
             State::Empty => self.args.last().map(String::as_str),
@@ -151,15 +162,20 @@ impl Default for Args {
     }
 }
 
+/// Colors for [`Error`](crate::Error) output.
 pub struct Style {
+    /// Primary color, used in headers
     pub primary: Color,
+    /// Secondary color, used as an accent color
     pub secondary: Color,
+    /// Tertiary color, used in longer sections of text
     pub tertiary: Color,
+    /// Error color, in the error message's prefix
     pub error: Color,
 }
 
 impl Style {
-    pub fn format_help(&self, ctx: &Context, f: &mut impl io::Write) -> io::Result<()> {
+    pub(crate) fn format_help(&self, ctx: &Context, f: &mut impl io::Write) -> io::Result<()> {
         let name = &ctx.name;
         let description = ctx.description.trim();
 
@@ -176,14 +192,14 @@ impl Style {
             t.disable();
         }
 
-        if !ctx.usages.is_empty() {
-            writeln!(f, "{p}Usage:{s}")?;
+        if ctx.usages.is_empty() {
+            writeln!(f, "{p}Usage: {s}{name}")?;
+        } else {
+            writeln!(f, "{p}Usage:")?;
             for (usage, doc) in ctx.usages {
                 let cmd = format!("{name} {usage}");
-                writeln!(f, "    {cmd:<18}  {t}{}", doc.trim())?;
+                writeln!(f, "    {s}{cmd:<18}  {t}{}", doc.trim())?;
             }
-        } else {
-            writeln!(f, "{p}Usage: {s}{name}")?
         }
 
         if !description.is_empty() {
@@ -207,7 +223,7 @@ impl Style {
         Ok(())
     }
 
-    pub fn format_error(&self, error: &str, f: &mut impl io::Write) -> io::Result<()> {
+    pub(crate) fn format_error(&self, error: &str, f: &mut impl io::Write) -> io::Result<()> {
         writeln!(f, "{}error: {}{error}", self.error, self.tertiary)
     }
 }
@@ -223,21 +239,27 @@ impl Default for Style {
     }
 }
 
+/// An [ANSI formatting sequence], which can be disabled.
+///
+/// [ANSI formatting sequence]: https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_(Select_Graphic_Rendition)_parameters
 #[derive(Clone, Copy)]
 pub struct Color(Option<&'static str>);
 
 impl Color {
+    /// Create a new color
+    #[must_use]
     pub fn new(color: &'static str) -> Self {
         Self(Some(color))
     }
 
+    /// Disable outputting this color.
     pub fn disable(&mut self) {
         self.0 = None;
     }
 }
 
 impl std::fmt::Display for Color {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         if let Color(Some(c)) = self {
             write!(f, "\x1b[{c}m")?;
         }

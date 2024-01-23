@@ -23,7 +23,17 @@ macro_rules! __init {
         let mut $opt = false;
         $crate::__init! { $($($rest)*)* }
     };
-    ($($rest:tt)*) => {};
+    ($(#[$($attr:tt)*])* $bind:ident => $body:expr $(, $($rest:tt)*)?) => {
+        let mut $bind = None;
+        $crate::__init! { $($($rest)*)* }
+    };
+    ($(#[$($attr:tt)*])* ..$var:ident => $body:expr $(, $($rest:tt)*)?) => {
+        $crate::__init! { $($($rest)*)* }
+    };
+    ($(#[$($attr:tt)*])* $cmd:literal $(| $cmd2:literal)* $({ $($params:tt)* })? $(=> $body:expr)? $(, $($rest:tt)*)?) => {
+        $crate::__init! { $($($rest)*)* }
+    };
+    () => {};
 }
 
 #[doc(hidden)]
@@ -101,13 +111,13 @@ macro_rules! __cmd {
     ($args:ident, $arg:ident; $(#[$($attr:tt)*])* $bind:ident => $body:expr $(, $($rest:tt)*)?) => {
         $(#[$($attr)*])*
         {
-            let $bind = $arg;
-
-            break match $args.next_opt() {
-                Some(v) => Err(Error::Unexpected(v.to_string())),
+            match $arg {
+                Some(v) if $bind.is_none() => $bind = Some(v),
+                Some(v) => break Err(Error::Unexpected(v)),
                 #[allow(unreachable_code)]
-                None => Ok($body),
+                None => break Ok($body),
             }
+            continue;
         }
 
         $crate::__cmd! { $args, $arg; $($($rest)*)* }
@@ -115,14 +125,15 @@ macro_rules! __cmd {
     ($args:ident, $arg:ident; $(#[$($attr:tt)*])* ..$var:ident => $body:expr $(, $($rest:tt)*)?) => {
         $(#[$($attr)*])*
         {
-            let mut $var = match $args.into_values() {
-                Ok(v) => v,
+            let $var = match $args.into_values() {
+                Ok(mut var) => {
+                    if let Some(v) = $arg {
+                        var.insert(0, v);
+                    }
+                    var
+                }
                 Err(opt) => break Err(Error::Unexpected(opt)),
             };
-
-            if let Some(v) = $arg {
-                $var.insert(0, v);
-            }
 
             #[allow(unreachable_code)]
             {
@@ -163,69 +174,62 @@ macro_rules! __cmd {
 macro_rules! __help {
     ($args:ident; $($rest:tt)*) => {
         $args.context.name = ::std::env!("CARGO_PKG_NAME").into();
-        $crate::__help_options! { [], [], [], $args; $($rest)* }
+        $crate::__help_options! { [], [], $args; $($rest)* }
     };
     ($args:ident, $(#[$($attr:tt)*])* $str:literal; $($rest:tt)*) => {
         $args.context.name += concat!(" ", $str);
         $args.context.description = $crate::__doc! { $(#[$($attr)*])* };
-        $crate::__help_options! { [], [], [], $args; $($rest)* }
+        $crate::__help_options! { [], [], $args; $($rest)* }
     };
 }
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __help_options {
-    ([$($opts:expr),*], [$($cmds:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident? $(, $($rest:tt)*)?) => {
+    ([$($opts:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident? $(, $($rest:tt)*)?) => {
         $crate::__help_options! {
             [$($opts,)* (concat!("--", stringify!($opt), " <value>"), $crate::__doc! { $(#[$($attr)*])* })],
-            [$($cmds),*],
             [$($usages),*],
             $args; $($($rest)*)*
         }
     };
-    ([$($opts:expr),*], [$($cmds:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident+ $(, $($rest:tt)*)?) => {
+    ([$($opts:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident+ $(, $($rest:tt)*)?) => {
         $crate::__help_options! {
             [$($opts,)* (concat!("--", stringify!($opt)), $crate::__doc! { $(#[$($attr)*])* })],
-            [$($cmds),*],
             [$($usages),*],
             $args; $($($rest)*)*
         }
     };
-    ([$($opts:expr),*], [$($cmds:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident $(, $($rest:tt)*)?) => {
+    ([$($opts:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident $(, $($rest:tt)*)?) => {
         $crate::__help_options! {
             [$($opts,)* (concat!("--", stringify!($opt)), $crate::__doc! { $(#[$($attr)*])* })],
-            [$($cmds),*],
             [$($usages),*],
             $args; $($($rest)*)*
         }
     };
-    ([$($opts:expr),*], [$($cmds:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $bind:ident => $body:expr $(, $($rest:tt)*)?) => {
+    ([$($opts:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $bind:ident => $body:expr $(, $($rest:tt)*)?) => {
         $crate::__help_options! {
             [$($opts),*],
-            [$($cmds),*],
             [$($usages,)* (concat!("[", stringify!($bind), "]"), $crate::__doc! { $(#[$($attr)*])* })],
             $args; $($($rest)*)*
         }
     };
-    ([$($opts:expr),*], [$($cmds:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* ..$var:ident => $body:expr $(, $($rest:tt)*)?) => {
+    ([$($opts:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* ..$var:ident => $body:expr $(, $($rest:tt)*)?) => {
         $crate::__help_options! {
             [$($opts),*],
-            [$($cmds),*],
             [$($usages),* (concat!("[", stringify!($var), "].."), $crate::__doc! { $(#[$($attr)*])* })],
             $args; $($($rest)*)*
         }
     };
-    ([$($opts:expr),*], [$($cmds:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $str:literal $(| $str2:literal)* $({ $($params:tt)* })? $(=> $body:expr)? $(, $($rest:tt)*)?) => {
+    ([$($opts:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $str:literal $(| $str2:literal)* $({ $($params:tt)* })? $(=> $body:expr)? $(, $($rest:tt)*)?) => {
         $crate::__help_options! {
             [$($opts),*],
-            [$($cmds,)* (concat!($str, $(", ", $str2)*), $crate::__doc! { $(#[$($attr)*])* })],
-            [$($usages),*],
+            [$($usages,)* (concat!($str, $(", ", $str2)*), $crate::__doc! { $(#[$($attr)*])* })],
             $args; $($($rest)*)*
         }
     };
-    ([$($opts:expr),*], [$($cmds:expr),*], [$($usages:expr),*], $args:ident;) => {
+    ([$($opts:expr),*], [$($usages:expr),*], $args:ident;) => {
         $args.context.options = &[$($opts),*];
-        $args.context.commands = &[$($cmds),*];
         $args.context.usages = &[$($usages),*];
     };
 }

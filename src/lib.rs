@@ -3,12 +3,22 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+//! awa
+
+#![warn(missing_docs)]
+
 #[doc(hidden)]
 pub mod __priv;
-pub mod parser;
+mod parser;
 
-pub use parser::{Args, Opt};
+pub use parser::{Args, Color, Opt, Style};
 
+/// Parse CLI arguments.
+///
+/// If parsing fails or help is requested, this macro will exit the process. See [`try_parse`] for
+/// manual handling.
+///
+/// See the [crate's documentation][crate] for more info.
 #[macro_export]
 macro_rules! parse {
     ($args:ident; $($rest:tt)*) => {
@@ -28,6 +38,12 @@ macro_rules! parse {
     };
 }
 
+/// Parse CLI arguments.
+///
+/// This macro is similar to [`parse`], but does not exit on error, and returns a [`Result`]. If
+/// you wish to exit with a custom error, see [`Error::terminate`].
+///
+/// See the [crate's documentation][crate] for more info.
 #[macro_export]
 macro_rules! try_parse {
     ($args:ident; $($rest:tt)*) => {{
@@ -46,16 +62,27 @@ macro_rules! try_parse {
     }};
 }
 
+/// [`parse`] exit condition. This may occur with invalid arguments, or if --help is given,
+/// [`Error::Help`].
 #[derive(Debug)]
 pub enum Error {
+    /// The help message should be displayed
     Help,
+    /// An argument was missing a flag
     MissingValue,
+    /// Missing subcommand
     MissingCommand,
+    /// Unexpected argument
     Unexpected(String),
+    /// Unknown subcommand
     UnknownCommand(String),
+    /// Missing required argument
+    Required(String),
 }
 
 impl Error {
+    /// Exit the program with this condition. [`Error::Help`] will display the help message and
+    /// exit with code 0, otherwise display an error message and exit with code 1.
     pub fn terminate(self, args: parser::Args) -> ! {
         let mut w = std::io::stderr().lock();
 
@@ -87,6 +114,11 @@ impl Error {
             Self::UnknownCommand(v) => {
                 args.style
                     .format_error(&format!("unknown command: {v}"), &mut w)
+                    .unwrap();
+            }
+            Self::Required(v) => {
+                args.style
+                    .format_error(&format!("missing required argument: {v}"), &mut w)
                     .unwrap();
             }
         }
