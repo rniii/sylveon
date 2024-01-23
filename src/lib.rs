@@ -23,7 +23,7 @@ macro_rules! parse {
         }
     };
     ($($rest:tt)*) => {
-        let mut __args = $crate::Args::default();
+        let mut __args = $crate::Args::new();
         $crate::parse! { __args; $($rest)* }
     };
 }
@@ -39,7 +39,7 @@ macro_rules! try_parse {
     ($($rest:tt)*) => {{
         use $crate::__priv::*;
 
-        let mut __args = $crate::Args::default();
+        let mut __args = $crate::Args::new();
 
         $crate::__init! { $($rest)* }
         $crate::__loop! { __args; $($rest)* }

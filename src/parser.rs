@@ -34,6 +34,7 @@ enum State {
 pub struct Context<'a> {
     pub name: Cow<'a, str>,
     pub description: &'a str,
+    pub usages: &'a [(&'a str, &'a str)],
     pub options: &'a [(&'a str, &'a str)],
     pub commands: &'a [(&'a str, &'a str)],
 }
@@ -47,20 +48,31 @@ pub struct Args {
 }
 
 impl Args {
-    pub fn new(args: Vec<String>) -> Self {
+    pub fn new() -> Self {
+        Self::from(std::env::args().skip(1))
+    }
+
+    pub fn from(args: impl IntoIterator<Item = String>) -> Self {
         Self {
-            args,
+            args: args.into_iter().collect(),
             state: State::Read(0),
             style: Style::default(),
             context: Context::default(),
         }
     }
 
+    /// Set this command's [Style], changing output colors.
+    ///
+    /// Color output can be disabled by setting the `NO_COLOR` environment variable, also via
+    /// [std::env::set_var].
     pub fn style(&mut self, style: Style) -> &mut Self {
         self.style = style;
         self
     }
 
+    /// Read the next option in the arguments. Used by [crate::parse].
+    ///
+    /// Returns [None] if empty.
     pub fn next_opt(&mut self) -> Option<Opt> {
         loop {
             match &mut self.state {
@@ -95,6 +107,10 @@ impl Args {
         }
     }
 
+    /// Get the next value from the arguments. Used by [crate::parse].
+    ///
+    /// Similar to `args.next_opt().map(|v| v.to_string())`, but also handles values in short
+    /// arguments (`-ofile`).
     pub fn value(&mut self) -> Option<String> {
         match self.state {
             State::Short(i, j) => {
@@ -105,6 +121,9 @@ impl Args {
         }
     }
 
+    /// Try to read all the remaining arguments as values. Used by [crate::parse].
+    ///
+    /// If a flag is encountered, it'll be returned as [Err].
     pub fn into_values(&mut self) -> Result<Vec<String>, String> {
         let mut values = Vec::new();
 
@@ -117,6 +136,7 @@ impl Args {
         }
     }
 
+    /// Peek the previous argument. Used by [crate::parse] when formatting errors.
     pub fn peek_back(&self) -> Option<&str> {
         match self.state {
             State::Empty => self.args.last().map(String::as_str),
@@ -127,7 +147,7 @@ impl Args {
 
 impl Default for Args {
     fn default() -> Self {
-        Self::new(std::env::args().skip(1).collect())
+        Self::new()
     }
 }
 
@@ -140,6 +160,9 @@ pub struct Style {
 
 impl Style {
     pub fn format_help(&self, ctx: &Context, f: &mut impl io::Write) -> io::Result<()> {
+        let name = &ctx.name;
+        let description = ctx.description.trim();
+
         let &Style {
             primary: mut p,
             secondary: mut s,
@@ -153,23 +176,31 @@ impl Style {
             t.disable();
         }
 
-        writeln!(f, "{p}Usage: {s}{}", ctx.name)?;
+        if !ctx.usages.is_empty() {
+            writeln!(f, "{p}Usage:{s}")?;
+            for (usage, doc) in ctx.usages {
+                let cmd = format!("{name} {usage}");
+                writeln!(f, "    {cmd:<18}  {t}{}", doc.trim())?;
+            }
+        } else {
+            writeln!(f, "{p}Usage: {s}{name}")?
+        }
 
-        if !ctx.description.is_empty() {
-            writeln!(f, "\n{t}{}", ctx.description.trim())?;
+        if !description.is_empty() {
+            writeln!(f, "\n{t}{description}")?;
         }
 
         if !ctx.options.is_empty() {
             writeln!(f, "\n{p}Options:{t}")?;
-            for (opt, desc) in ctx.options {
-                writeln!(f, "    {opt:<18}  {}", desc.trim())?;
+            for (opt, doc) in ctx.options {
+                writeln!(f, "    {opt:<18}  {}", doc.trim())?;
             }
         }
 
         if !ctx.commands.is_empty() {
-            writeln!(f, "\n{p}Options:{t}")?;
-            for (cmd, desc) in ctx.commands {
-                writeln!(f, "    {cmd:<18}  {}", desc.trim())?;
+            writeln!(f, "\n{p}Commands:{t}")?;
+            for (cmd, doc) in ctx.commands {
+                writeln!(f, "    {cmd:<18}  {}", doc.trim())?;
             }
         }
 

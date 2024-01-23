@@ -106,7 +106,7 @@ macro_rules! __cmd {
             break match $args.next_opt() {
                 Some(v) => Err(Error::Unexpected(v.to_string())),
                 #[allow(unreachable_code)]
-                None => Ok({ $body }),
+                None => Ok($body),
             }
         }
 
@@ -125,17 +125,17 @@ macro_rules! __cmd {
             }
 
             #[allow(unreachable_code)]
-            break Ok({ $body });
+            {
+                break Ok($body);
+            }
         }
 
         $crate::__cmd! { $args, $arg; $($($rest)*)* }
     };
-    ($args:ident, $arg:ident; $(#[$($attr:tt)*])* $($cmd:literal)|+ $({ $($params:tt)* })? $(=> $body:expr)? $(, $($rest:tt)*)?) => {
+    ($args:ident, $arg:ident; $(#[$($attr:tt)*])* $cmd:literal $(| $cmd2:literal)* $({ $($params:tt)* })? $(=> $body:expr)? $(, $($rest:tt)*)?) => {
         $(#[$($attr)*])*
-        if let Some($($cmd)|*) = $arg.as_deref() {
-            $args.context.description = $crate::__doc! { $(#[$($attr)*])* };
-            $crate::__help! { $args, $($cmd)|*; $($($params)*)* }
-
+        if let Some($cmd $(| $cmd2)*) = $arg.as_deref() {
+            $crate::__help! { $args, $(#[$($attr)*])* $cmd; $($($params)*)* }
             $crate::__init! { $($($params)*)* }
 
             match $crate::__loop! { $args; $($($params)*)* } {
@@ -163,62 +163,70 @@ macro_rules! __cmd {
 macro_rules! __help {
     ($args:ident; $($rest:tt)*) => {
         $args.context.name = ::std::env!("CARGO_PKG_NAME").into();
-        $crate::__help_options! { [], [], $args; $($rest)* }
+        $crate::__help_options! { [], [], [], $args; $($rest)* }
     };
-    ($args:ident, $str:literal $(| $_:tt)*; $($rest:tt)*) => {
+    ($args:ident, $(#[$($attr:tt)*])* $str:literal; $($rest:tt)*) => {
         $args.context.name += concat!(" ", $str);
-        $crate::__help_options! { [], [], $args; $($rest)* }
+        $args.context.description = $crate::__doc! { $(#[$($attr)*])* };
+        $crate::__help_options! { [], [], [], $args; $($rest)* }
     };
 }
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __help_options {
-    ([$($opts:expr),*], [$($cmds:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident? $(, $($rest:tt)*)?) => {
+    ([$($opts:expr),*], [$($cmds:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident? $(, $($rest:tt)*)?) => {
         $crate::__help_options! {
             [$($opts,)* (concat!("--", stringify!($opt), " <value>"), $crate::__doc! { $(#[$($attr)*])* })],
             [$($cmds),*],
+            [$($usages),*],
             $args; $($($rest)*)*
         }
     };
-    ([$($opts:expr),*], [$($cmds:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident+ $(, $($rest:tt)*)?) => {
+    ([$($opts:expr),*], [$($cmds:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident+ $(, $($rest:tt)*)?) => {
         $crate::__help_options! {
             [$($opts,)* (concat!("--", stringify!($opt)), $crate::__doc! { $(#[$($attr)*])* })],
             [$($cmds),*],
+            [$($usages),*],
             $args; $($($rest)*)*
         }
     };
-    ([$($opts:expr),*], [$($cmds:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident $(, $($rest:tt)*)?) => {
+    ([$($opts:expr),*], [$($cmds:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident $(, $($rest:tt)*)?) => {
         $crate::__help_options! {
             [$($opts,)* (concat!("--", stringify!($opt)), $crate::__doc! { $(#[$($attr)*])* })],
             [$($cmds),*],
+            [$($usages),*],
             $args; $($($rest)*)*
         }
     };
-    ([$($opts:expr),*], [$($cmds:expr),*], $args:ident; $(#[$($attr:tt)*])* $bind:ident => $body:expr $(, $($rest:tt)*)?) => {
-        $crate::__help_options! {
-            [$($opts,)* (concat!("[", stringify!($bind), "]"), $crate::__doc! { $(#[$($attr)*])* })],
-            [$($cmds),*],
-            $args; $($($rest)*)*
-        }
-    };
-    ([$($opts:expr),*], [$($cmds:expr),*], $args:ident; $(#[$($attr:tt)*])* ..$var:ident => $body:expr $(, $($rest:tt)*)?) => {
-        $crate::__help_options! {
-            [$($opts,)* (concat!("[", stringify!($var), "].."), $crate::__doc! { $(#[$($attr)*])* })],
-            [$($cmds),*],
-            $args; $($($rest)*)*
-        }
-    };
-    ([$($opts:expr),*], [$($cmds:expr),*], $args:ident; $(#[$($attr:tt)*])* $($str:literal)|+ $({ $($params:tt)* })? $(=> $body:expr)? $(, $($rest:tt)*)?) => {
+    ([$($opts:expr),*], [$($cmds:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $bind:ident => $body:expr $(, $($rest:tt)*)?) => {
         $crate::__help_options! {
             [$($opts),*],
-            [$($cmds,)* ($str, $crate::__doc! { $(#[$($attr)*])* })],
+            [$($cmds),*],
+            [$($usages,)* (concat!("[", stringify!($bind), "]"), $crate::__doc! { $(#[$($attr)*])* })],
             $args; $($($rest)*)*
         }
     };
-    ([$($opts:expr),*], [$($cmds:expr),*], $args:ident;) => {
+    ([$($opts:expr),*], [$($cmds:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* ..$var:ident => $body:expr $(, $($rest:tt)*)?) => {
+        $crate::__help_options! {
+            [$($opts),*],
+            [$($cmds),*],
+            [$($usages),* (concat!("[", stringify!($var), "].."), $crate::__doc! { $(#[$($attr)*])* })],
+            $args; $($($rest)*)*
+        }
+    };
+    ([$($opts:expr),*], [$($cmds:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $str:literal $(| $str2:literal)* $({ $($params:tt)* })? $(=> $body:expr)? $(, $($rest:tt)*)?) => {
+        $crate::__help_options! {
+            [$($opts),*],
+            [$($cmds,)* (concat!($str, $(", ", $str2)*), $crate::__doc! { $(#[$($attr)*])* })],
+            [$($usages),*],
+            $args; $($($rest)*)*
+        }
+    };
+    ([$($opts:expr),*], [$($cmds:expr),*], [$($usages:expr),*], $args:ident;) => {
         $args.context.options = &[$($opts),*];
         $args.context.commands = &[$($cmds),*];
+        $args.context.usages = &[$($usages),*];
     };
 }
 
