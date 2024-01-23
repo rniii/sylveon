@@ -17,7 +17,6 @@ macro_rules! parse {
         $crate::__help! { $args; $($rest)* }
 
         $crate::__init! { $($rest)* }
-        #[allow(unreachable_code)]
         match $crate::__loop! { $args; $($rest)* } {
             Ok(v) => v,
             Err(e) => e.terminate($args),
@@ -35,7 +34,6 @@ macro_rules! try_parse {
         use $crate::__priv::*;
 
         $crate::__init! { $($rest)* }
-        #[allow(unreachable_code)]
         $crate::__loop! { $args, $($rest)* }
     }};
     ($($rest:tt)*) => {{
@@ -44,7 +42,6 @@ macro_rules! try_parse {
         let mut __args = $crate::Args::default();
 
         $crate::__init! { $($rest)* }
-        #[allow(unreachable_code)]
         $crate::__loop! { __args; $($rest)* }
     }};
 }

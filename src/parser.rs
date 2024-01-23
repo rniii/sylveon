@@ -33,6 +33,7 @@ enum State {
 #[derive(Default)]
 pub struct Context<'a> {
     pub name: Cow<'a, str>,
+    pub description: &'a str,
     pub options: &'a [(&'a str, &'a str)],
     pub commands: &'a [(&'a str, &'a str)],
 }
@@ -104,6 +105,18 @@ impl Args {
         }
     }
 
+    pub fn into_values(&mut self) -> Result<Vec<String>, String> {
+        let mut values = Vec::new();
+
+        loop {
+            match self.next_opt() {
+                Some(Opt::Value(v)) => values.push(v.to_owned()),
+                Some(opt) => return Err(opt.to_string()),
+                None => return Ok(values),
+            }
+        }
+    }
+
     pub fn peek_back(&self) -> Option<&str> {
         match self.state {
             State::Empty => self.args.last().map(String::as_str),
@@ -142,17 +155,21 @@ impl Style {
 
         writeln!(f, "{p}Usage: {s}{}", ctx.name)?;
 
+        if !ctx.description.is_empty() {
+            writeln!(f, "\n{t}{}", ctx.description.trim())?;
+        }
+
         if !ctx.options.is_empty() {
             writeln!(f, "\n{p}Options:{t}")?;
             for (opt, desc) in ctx.options {
-                writeln!(f, "    {opt:<12}  {desc}")?;
+                writeln!(f, "    {opt:<18}  {}", desc.trim())?;
             }
         }
 
         if !ctx.commands.is_empty() {
             writeln!(f, "\n{p}Options:{t}")?;
             for (cmd, desc) in ctx.commands {
-                writeln!(f, "    {cmd:<12}  {desc}")?;
+                writeln!(f, "    {cmd:<18}  {}", desc.trim())?;
             }
         }
 
