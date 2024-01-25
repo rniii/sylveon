@@ -1,7 +1,11 @@
 [package]
 name = "sylveon_macros"
 version = "0.1.0"
+authors = ["rini <rini@rinici.de>"]
 edition = "2021"
+description = "proc-macros for the sylveon crate"
+repository = "https://codeberg.org/twink/sylveon"
+license = "Apache-2.0"
 
 [lib]
 proc-macro = true

@@ -8,7 +8,7 @@ repository = "https://codeberg.org/twink/sylveon"
 license = "Apache-2.0"
 
 [dependencies]
-sylveon_macros = { path = "macros" }
+sylveon_macros = { version = "0.1.0", path = "macros" }
 
 [workspace]
 members = ["macros", "."]
