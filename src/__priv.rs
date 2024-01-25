@@ -4,33 +4,38 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub use crate::{Args, Error, Opt};
+pub use sylveon_macros::opt as __opt;
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __init {
-    ($(#[$attr:meta])* $opt:ident? $(, $($rest:tt)*)?) => {
+    ($(#[$attr:meta])* $opt:ident? $(= $($v:ident)|+)? $(, $($rest:tt)*)?) => {
         $(#[$attr])*
         let mut $opt = None;
         $crate::__init! { $($($rest)*)* }
     };
-    ($(#[$attr:meta])* $opt:ident+ $(, $($rest:tt)*)?) => {
+    ($(#[$attr:meta])* $opt:ident+ $(= $($v:ident)|+)? $(, $($rest:tt)*)?) => {
         $(#[$attr])*
         let mut $opt = 0;
         $crate::__init! { $($($rest)*)* }
     };
-    ($(#[$attr:meta])* $opt:ident $(, $($rest:tt)*)?) => {
+    ($(#[$attr:meta])* $opt:ident $(= $($v:ident)|+)? $(, $($rest:tt)*)?) => {
         $(#[$attr])*
         let mut $opt = false;
         $crate::__init! { $($($rest)*)* }
     };
-    ($(#[$($attr:tt)*])* $bind:ident => $body:expr $(, $($rest:tt)*)?) => {
+    ($(#[$attr:meta])* $bind:ident => $body:expr $(, $($rest:tt)*)?) => {
+        $(#[$attr])*
         let mut $bind = None;
         $crate::__init! { $($($rest)*)* }
     };
-    ($(#[$($attr:tt)*])* ..$var:ident => $body:expr $(, $($rest:tt)*)?) => {
+    ($(#[$attr:meta])* ..$var:ident => $body:expr $(, $($rest:tt)*)?) => {
         $crate::__init! { $($($rest)*)* }
     };
-    ($(#[$($attr:tt)*])* $cmd:literal $(| $cmd2:literal)* $({ $($params:tt)* })? $(=> $body:expr)? $(, $($rest:tt)*)?) => {
+    ($(#[$attr:meta])* $cmd:literal $(| $cmd2:literal)* $({ $($params:tt)* })? $(=> $body:expr)? $(, $($rest:tt)*)?) => {
+        $crate::__init! { $($($rest)*)* }
+    };
+    ($(#[$attr:meta])* _ => $body:expr $(, $($rest:tt)*)?) => {
         $crate::__init! { $($($rest)*)* }
     };
     () => {};
@@ -50,9 +55,9 @@ macro_rules! __loop {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __match {
-    ($args:ident, $arg:ident; $(#[$attr:meta])* $opt:ident? $(, $($rest:tt)*)?) => {
+    ($args:ident, $arg:ident; $(#[$attr:meta])* $opt:ident? $(= $($v:ident)|+)? $(, $($rest:tt)*)?) => {
         $(#[$attr])*
-        if let Some(Opt::Long(stringify!($opt))) = $arg {
+        if let $crate::__pat! { $opt $(= $($v)|*)* } = $arg {
             $opt = match $args.value() {
                 Some(v) => Some(v),
                 None => break Err(Error::MissingValue),
@@ -63,9 +68,9 @@ macro_rules! __match {
 
         $crate::__match! { $args, $arg; $($($rest)*)* }
     };
-    ($args:ident, $arg:ident; $(#[$attr:meta])* $opt:ident+ $(, $($rest:tt)*)?) => {
+    ($args:ident, $arg:ident; $(#[$attr:meta])* $opt:ident+ $(= $($v:ident)|+)? $(, $($rest:tt)*)?) => {
         $(#[$attr])*
-        if let Some(Opt::Long(stringify!($opt))) = $arg {
+        if let $crate::__pat! { $opt $(= $($v)|*)* } = $arg {
             $opt += 1;
 
             continue;
@@ -73,9 +78,9 @@ macro_rules! __match {
 
         $crate::__match! { $args, $arg; $($($rest)*)* }
     };
-    ($args:ident, $arg:ident; $(#[$attr:meta])* $opt:ident $(, $($rest:tt)*)?) => {
+    ($args:ident, $arg:ident; $(#[$attr:meta])* $opt:ident $(= $($v:ident)|+)? $(, $($rest:tt)*)?) => {
         $(#[$attr])*
-        if let Some(Opt::Long(stringify!($opt))) = $arg {
+        if let $crate::__pat! { $opt $(= $($v)|*)* } = $arg {
             $opt = true;
 
             continue;
@@ -114,7 +119,6 @@ macro_rules! __cmd {
             match $arg {
                 Some(v) if $bind.is_none() => $bind = Some(v),
                 Some(v) => break Err(Error::Unexpected(v)),
-                #[allow(unreachable_code)]
                 None => break Ok($body),
             }
             continue;
@@ -135,10 +139,7 @@ macro_rules! __cmd {
                 Err(opt) => break Err(Error::Unexpected(opt)),
             };
 
-            #[allow(unreachable_code)]
-            {
-                break Ok($body);
-            }
+            break Ok($body);
         }
 
         $crate::__cmd! { $args, $arg; $($($rest)*)* }
@@ -150,7 +151,6 @@ macro_rules! __cmd {
             $crate::__init! { $($($params)*)* }
 
             match $crate::__loop! { $args; $($($params)*)* } {
-                #[allow(unreachable_code)]
                 Ok(v) => {
                     $(let () = v; break Ok($body);)*
                     break Ok(v);
@@ -161,11 +161,17 @@ macro_rules! __cmd {
 
         $crate::__cmd! { $args, $arg; $($($rest)*)* }
     };
-    ($args:ident, $arg:ident;) => {
-        #[allow(unreachable_code)]
-        {
-            break Err($arg.map_or(Error::MissingCommand, Error::UnknownCommand));
+    ($args:ident, $arg:ident; $(#[$($attr:tt)*])* _ => $body:expr $(, $($rest:tt)*)?) => {
+        $(#[$($attr)*])*
+        match $arg {
+            Some(v) => break Err(Error::Unexpected(v)),
+            None => break Ok($body),
         }
+
+        $crate::__cmd! { $args, $arg; $($($rest)*)* }
+    };
+    ($args:ident, $arg:ident;) => {
+        break Err($arg.map_or(Error::MissingCommand, Error::UnknownCommand));
     };
 }
 
@@ -186,23 +192,23 @@ macro_rules! __help {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __help_options {
-    ([$($opts:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident? $(, $($rest:tt)*)?) => {
+    ([$($opts:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident? $(= $($v:ident)|+)? $(, $($rest:tt)*)?) => {
         $crate::__help_options! {
-            [$($opts,)* (concat!("--", stringify!($opt), " <value>"), $crate::__doc! { $(#[$($attr)*])* })],
+            [$($opts,)* ($crate::__help_opt! { $opt $(= $($v)|*)* }, " <value>", $crate::__doc! { $(#[$($attr)*])* })],
             [$($usages),*],
             $args; $($($rest)*)*
         }
     };
-    ([$($opts:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident+ $(, $($rest:tt)*)?) => {
+    ([$($opts:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident+ $(= $($v:ident)|+)? $(, $($rest:tt)*)?) => {
         $crate::__help_options! {
-            [$($opts,)* (concat!("--", stringify!($opt)), $crate::__doc! { $(#[$($attr)*])* })],
+            [$($opts,)* ($crate::__help_opt! { $opt $(= $($v)|*)* }, "", $crate::__doc! { $(#[$($attr)*])* })],
             [$($usages),*],
             $args; $($($rest)*)*
         }
     };
-    ([$($opts:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident $(, $($rest:tt)*)?) => {
+    ([$($opts:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* $opt:ident $(= $($v:ident)|+)? $(, $($rest:tt)*)?) => {
         $crate::__help_options! {
-            [$($opts,)* (concat!("--", stringify!($opt)), $crate::__doc! { $(#[$($attr)*])* })],
+            [$($opts,)* ($crate::__help_opt! { $opt $(= $($v)|*)* }, "", $crate::__doc! { $(#[$($attr)*])* })],
             [$($usages),*],
             $args; $($($rest)*)*
         }
@@ -217,7 +223,7 @@ macro_rules! __help_options {
     ([$($opts:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* ..$var:ident => $body:expr $(, $($rest:tt)*)?) => {
         $crate::__help_options! {
             [$($opts),*],
-            [$($usages),* (concat!("[", stringify!($var), "].."), $crate::__doc! { $(#[$($attr)*])* })],
+            [$($usages,)* (concat!("[", stringify!($var), "].."), $crate::__doc! { $(#[$($attr)*])* })],
             $args; $($($rest)*)*
         }
     };
@@ -225,6 +231,13 @@ macro_rules! __help_options {
         $crate::__help_options! {
             [$($opts),*],
             [$($usages,)* (concat!($str, $(", ", $str2)*), $crate::__doc! { $(#[$($attr)*])* })],
+            $args; $($($rest)*)*
+        }
+    };
+    ([$($opts:expr),*], [$($usages:expr),*], $args:ident; $(#[$($attr:tt)*])* _ => $body:expr $(, $($rest:tt)*)?) => {
+        $crate::__help_options! {
+            [$($opts),*],
+            [$($usages,)* ("", $crate::__doc! { $(#[$($attr)*])* })],
             $args; $($($rest)*)*
         }
     };
@@ -245,5 +258,27 @@ macro_rules! __doc {
     };
     () => {
         ""
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __pat {
+    ($opt:ident = $($v:ident)|+) => {
+        $(Some(__opt!($v)))|*
+    };
+    ($opt:ident) => {
+        Some(__opt!($opt))
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __help_opt {
+    ($opt:ident = $($v:ident)|*) => {
+        &[$(__opt!($v)),*]
+    };
+    ($opt:ident) => {
+        &[__opt!($opt)]
     };
 }

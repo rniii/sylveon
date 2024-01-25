@@ -15,3 +15,9 @@ sylveon::parse! {
     ..path => { /* ... */ }
 }
 ```
+
+[Syntax guide](https://codeberg.org/twink/sylveon/src/branch/main/examples/guide.rs)
+
+## License
+
+Apache-2.0

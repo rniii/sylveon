@@ -3,7 +3,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-//! awa
+//! A very simple way to parse CLI arguments.
 
 #![warn(missing_docs)]
 
@@ -21,21 +21,22 @@ pub use parser::{Args, Color, Opt, Style};
 /// See the [crate's documentation][crate] for more info.
 #[macro_export]
 macro_rules! parse {
-    ($args:ident; $($rest:tt)*) => {
+    ($args:ident; $($rest:tt)*) => {{
         use $crate::__priv::*;
 
         $crate::__help! { $args; $($rest)* }
 
         $crate::__init! { $($rest)* }
+        #[allow(unreachable_code, clippy::diverging_sub_expression)]
         match $crate::__loop! { $args; $($rest)* } {
             Ok(v) => v,
             Err(e) => e.terminate($args),
         }
-    };
-    ($($rest:tt)*) => {
+    }};
+    ($($rest:tt)*) => {{
         let mut __args = $crate::Args::new();
         $crate::parse! { __args; $($rest)* }
-    };
+    }};
 }
 
 /// Parse CLI arguments.
@@ -50,6 +51,7 @@ macro_rules! try_parse {
         use $crate::__priv::*;
 
         $crate::__init! { $($rest)* }
+        #[allow(unreachable_code, clippy::diverging_sub_expression)]
         $crate::__loop! { $args, $($rest)* }
     }};
     ($($rest:tt)*) => {{
@@ -58,11 +60,12 @@ macro_rules! try_parse {
         let mut __args = $crate::Args::new();
 
         $crate::__init! { $($rest)* }
+        #[allow(unreachable_code, clippy::diverging_sub_expression)]
         $crate::__loop! { __args; $($rest)* }
     }};
 }
 
-/// [`parse`] exit condition. This may occur with invalid arguments, or if --help is given,
+/// [`parse`] exit condition. This may occur with invalid arguments, or if `--help` is given,
 /// [`Error::Help`].
 #[derive(Debug)]
 pub enum Error {

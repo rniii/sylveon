@@ -1,8 +1,14 @@
 [package]
 name = "sylveon"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["rini <rini@rinici.de>"]
 edition = "2021"
 description = "A simple way to parse CLI arguments"
 repository = "https://codeberg.org/twink/sylveon"
 license = "Apache-2.0"
+
+[dependencies]
+sylveon_macros = { path = "macros" }
+
+[workspace]
+members = ["macros", "."]

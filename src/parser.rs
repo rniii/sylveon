@@ -39,7 +39,7 @@ pub struct Context<'a> {
     pub name: Cow<'a, str>,
     pub description: &'a str,
     pub usages: &'a [(&'a str, &'a str)],
-    pub options: &'a [(&'a str, &'a str)],
+    pub options: &'a [(&'a [Opt<'a>], &'a str, &'a str)],
     pub commands: &'a [(&'a str, &'a str)],
 }
 
@@ -74,7 +74,7 @@ impl Args {
     ///
     /// Color output can be disabled by setting the `NO_COLOR` environment variable, also via
     /// [`std::env::set_var`].
-    pub fn style(&mut self, style: Style) -> &mut Self {
+    pub fn style(mut self, style: Style) -> Self {
         self.style = style;
         self
     }
@@ -208,15 +208,22 @@ impl Style {
 
         if !ctx.options.is_empty() {
             writeln!(f, "\n{p}Options:{t}")?;
-            for (opt, doc) in ctx.options {
-                writeln!(f, "    {opt:<18}  {}", doc.trim())?;
+            for (opts, v, doc) in ctx.options {
+                let opts = opts
+                    .iter()
+                    .map(Opt::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+                    + v;
+
+                writeln!(f, "    {opts:<22}  {}", doc.trim())?;
             }
         }
 
         if !ctx.commands.is_empty() {
             writeln!(f, "\n{p}Commands:{t}")?;
             for (cmd, doc) in ctx.commands {
-                writeln!(f, "    {cmd:<18}  {}", doc.trim())?;
+                writeln!(f, "    {cmd:<22}  {}", doc.trim())?;
             }
         }
 
@@ -233,7 +240,7 @@ impl Default for Style {
         Self {
             primary: Color::new("93"),
             secondary: Color::new("96"),
-            tertiary: Color::new("0"),
+            tertiary: Color::new(""),
             error: Color::new("31"),
         }
     }
